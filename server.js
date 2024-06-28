@@ -6,7 +6,6 @@ const cors = require('cors');
 const { body, validationResult } = require('express-validator');
 const db = require('./db');
 const rateLimit = require('express-rate-limit');
-const csrf = require('csurf');
 const cookieParser = require('cookie-parser');
 const app = express();
 const PORT = 3000;
@@ -15,11 +14,12 @@ const PORT = 3000;
 app.use(helmet());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
-app.use(cookieParser());
-app.use(csrf({ cookie: true })); // Enable csurf middleware with cookies
+app.use(cookieParser()); // Use cookie-parser to handle cookies
+
 app.use(morgan('dev'));
 morgan.token('req-body', (req, res) => JSON.stringify(req.body));
 app.use(morgan(':method :url :status :res[content-length] - :response-time ms :req-body'));
+
 app.use(cors());
 
 // Validation middleware for feedback creation
@@ -27,35 +27,28 @@ const validateFeedback = [
   body('email').isEmail().normalizeEmail(),
   body('rating').isInt({ min: 1, max: 5 }),
   body('message').isString().trim().isLength({ max: 1000 }), 
+  body('agent').isString().trim().isLength({ max: 1000 }), 
 ];
 
 // Rate Limiting middleware for POST /feedback
 const createFeedbackLimiter = rateLimit({
   windowMs: 24 * 60 * 60 * 1000, // 24 hours
-  max: 1, // limit each IP to 1 request per windowMs
+  max: 1000, // limit each IP to 1 request per windowMs
   message: { error: 'Too many requests, please try again after 24 hours :)' }
 });
 
 // create feedback
 app.post('/feedback', createFeedbackLimiter, validateFeedback, (req, res) => {
-  // Validate CSRF token
-  const csrfToken = req.csrfToken();
-  const clientCsrfToken = req.body._csrf;
-
-  if (!clientCsrfToken || clientCsrfToken !== csrfToken) {
-    return res.status(403).json({ error: 'CSRF token is missing or invalid' });
-  }
-
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
 
-  const { email, rating, message } = req.body;
+  const { email, rating, message, agent } = req.body; // Include agent in the request body
   try {
-    const stmt = db.prepare('INSERT INTO feedback (email, rating, message) VALUES (?, ?, ?)');
-    const info = stmt.run(email, rating, message);
-    res.status(201).json({ id: info.lastInsertRowid, email, rating, message });
+    const stmt = db.prepare('INSERT INTO feedback (email, rating, message, agent) VALUES (?, ?, ?, ?)');
+    const info = stmt.run(email, rating, message, agent);
+    res.status(201).json({ id: info.lastInsertRowid, email, rating, message, agent });
   } catch (error) {
     console.error('Error inserting feedback:', error.message);
     res.status(500).json({ error: 'Failed to process feedback' });
@@ -65,7 +58,7 @@ app.post('/feedback', createFeedbackLimiter, validateFeedback, (req, res) => {
 // Read all feedback (no authentication required)
 app.get('/feedback', (req, res) => {
   try {
-    const stmt = db.prepare('SELECT email, rating, message FROM feedback');
+    const stmt = db.prepare('SELECT email, rating, message, agent FROM feedback');
     const feedbacks = stmt.all();
     res.json(feedbacks);
   } catch (error) {
@@ -78,7 +71,7 @@ app.get('/feedback', (req, res) => {
 app.get('/feedback/:id', (req, res) => {
   const { id } = req.params;
   try {
-    const stmt = db.prepare('SELECT email, rating, message FROM feedback WHERE id = ?');
+    const stmt = db.prepare('SELECT email, rating, message, agent FROM feedback WHERE id = ?');
     const feedback = stmt.get(id);
     if (feedback) {
       res.json(feedback);

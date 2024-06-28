@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS feedback (
   email TEXT NOT NULL,
   rating INTEGER NOT NULL CHECK(rating >= 1 AND rating <= 5),
   message TEXT NOT NULL,
+  agent TEXT NOT NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`;
 
