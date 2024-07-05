@@ -4,6 +4,7 @@
   "description": "",
   "main": "db.js",
   "scripts": {
+    "build:css": "npx postcss tailwind.css -o styles.css",
     "start": "node server.js"
   },
   "keywords": [],
